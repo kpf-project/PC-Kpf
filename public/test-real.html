@@ -1,0 +1,271 @@
+<!DOCTYPE html>
+<html lang="th" class="bg-slate-50">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <title>Test Real Layout</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      height: auto;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior-x: none;
+      -webkit-text-size-adjust: 100%;
+      text-size-adjust: 100%;
+      scroll-behavior: smooth;
+      -webkit-transform: translateZ(0);
+      transform: translateZ(0);
+    }
+
+    body {
+      height: auto;
+      min-height: 100vh;
+      overflow-x: hidden;
+      overflow-y: auto;
+      overscroll-behavior-x: none;
+      touch-action: manipulation;
+      font-family: system-ui, -apple-system, sans-serif;
+      background: linear-gradient(135deg, #eef5ff 0%, #e3ecff 55%, #f7fbff 100%);
+      position: relative;
+    }
+
+    /* เหมือน body::before ของแอปจริง */
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image:
+        linear-gradient(120deg, rgba(59, 130, 246, 0.08) 0%, transparent 45%),
+        linear-gradient(0deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+      background-size: auto, 100px 100px, 100px 100px;
+      pointer-events: none;
+      z-index: 0;
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    .page-container {
+      position: relative;
+      z-index: 1;
+      min-height: 100vh;
+      background: linear-gradient(to br, #eef5ff, #e9f1ff, #f8fbff);
+      padding-bottom: 48px;
+    }
+
+    /* เหมือน admin layout */
+    .admin-layout {
+      position: relative;
+      padding-top: 130px;
+      padding-left: 16px;
+      padding-right: 16px;
+      padding-bottom: 40px;
+    }
+
+    .admin-wrapper {
+      max-width: 1600px;
+      margin: 0 auto;
+    }
+
+    /* ทดสอบ 3 กรณี */
+    .main-test-1 {
+      position: relative;
+      overflow: hidden; /* เหมือนเดิม - ควรเลื่อนไม่ได้ */
+      background: rgba(255, 255, 255, 0.85);
+      border-radius: 24px;
+      padding: 24px;
+    }
+
+    .main-test-2 {
+      position: relative;
+      overflow-x: hidden;
+      overflow-y: auto; /* แก้แล้ว - ควรเลื่อนได้ */
+      background: rgba(255, 255, 255, 0.85);
+      border-radius: 24px;
+      padding: 24px;
+    }
+
+    .main-test-3 {
+      position: relative;
+      /* ไม่มี overflow */
+      background: rgba(255, 255, 255, 0.85);
+      border-radius: 24px;
+      padding: 24px;
+    }
+
+    .box {
+      background: white;
+      border: 2px solid #3b82f6;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      color: #1e40af;
+      margin-bottom: 20px;
+      position: relative;
+      z-index: 10;
+    }
+
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px 10px 10px 0;
+      position: relative;
+      z-index: 10;
+    }
+
+    button:active {
+      background: #2563eb;
+    }
+
+    .status {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #1e40af;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 8px;
+      font-size: 14px;
+      z-index: 1000;
+    }
+
+    /* Fixed chat button เหมือนในแอป */
+    .fixed-chat {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      width: 56px;
+      height: 56px;
+      background: linear-gradient(to br, #3b82f6, #2563eb);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      box-shadow: 0 4px 20px rgba(59, 130, 246, 0.4);
+      z-index: 50;
+      pointer-events: auto;
+    }
+  </style>
+</head>
+<body>
+  <div class="status" id="status">Test 1: overflow-hidden</div>
+
+  <!-- Fixed Chat Button -->
+  <div class="fixed-chat">💬</div>
+
+  <div class="page-container">
+    <div class="admin-layout">
+      <div class="admin-wrapper">
+        <main class="main-test-1" id="mainContainer">
+          <h1>🔍 Test Real App Layout</h1>
+
+          <div class="box">
+            <h2>ทดสอบ 1: overflow-hidden (เหมือนเดิม)</h2>
+            <button onclick="switchTest(1)">Test 1</button>
+            <p>❌ ควรเลื่อนไม่ได้</p>
+          </div>
+
+          <div class="box">
+            <h2>ทดสอบ 2: overflow-x-hidden + overflow-y-auto</h2>
+            <button onclick="switchTest(2)">Test 2</button>
+            <p>✅ ควรเลื่อนได้</p>
+          </div>
+
+          <div class="box">
+            <h2>ทดสอบ 3: ไม่มี overflow</h2>
+            <button onclick="switchTest(3)">Test 3</button>
+            <p>✅ ควรเลื่อนได้</p>
+          </div>
+
+          <!-- Content boxes -->
+          <div class="box" style="background: #fef3c7;"><h3>📦 Box 1</h3></div>
+          <div class="box" style="background: #dbeafe;"><h3>📦 Box 2</h3></div>
+          <div class="box" style="background: #ddd6fe;"><h3>📦 Box 3</h3></div>
+          <div class="box" style="background: #fce7f3;"><h3>📦 Box 4</h3></div>
+          <div class="box" style="background: #d1fae5;"><h3>📦 Box 5</h3></div>
+          <div class="box" style="background: #fed7aa;"><h3>📦 Box 6</h3></div>
+          <div class="box" style="background: #fbcfe8;"><h3>📦 Box 7</h3></div>
+          <div class="box" style="background: #bfdbfe;"><h3>📦 Box 8</h3></div>
+          <div class="box" style="background: #fef3c7;"><h3>📦 Box 9</h3></div>
+          <div class="box" style="background: #dbeafe;"><h3>📦 Box 10</h3></div>
+          <div class="box" style="background: #ddd6fe;"><h3>📦 Box 11</h3></div>
+          <div class="box" style="background: #fce7f3;"><h3>📦 Box 12</h3></div>
+          <div class="box" style="background: #d1fae5;"><h3>📦 Box 13</h3></div>
+          <div class="box" style="background: #fed7aa;"><h3>📦 Box 14</h3></div>
+          <div class="box" style="background: #fbcfe8;"><h3>📦 Box 15</h3></div>
+          <div class="box" style="background: #bfdbfe;">
+            <h3>✅ Box 16 (ล่างสุด)</h3>
+            <p>ถ้าเห็นข้อความนี้ แสดงว่าเลื่อนมาถึงล่างสุดได้!</p>
+            <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})">🔝 กลับด้านบน</button>
+          </div>
+        </main>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    function switchTest(testNum) {
+      const main = document.getElementById('mainContainer');
+      const status = document.getElementById('status');
+
+      main.className = 'main-test-' + testNum;
+
+      if (testNum === 1) {
+        status.textContent = 'Test 1: overflow-hidden (❌ ควรเลื่อนไม่ได้)';
+        status.style.background = '#dc2626';
+      } else if (testNum === 2) {
+        status.textContent = 'Test 2: overflow-x-hidden overflow-y-auto (✅ ควรเลื่อนได้)';
+        status.style.background = '#16a34a';
+      } else {
+        status.textContent = 'Test 3: ไม่มี overflow (✅ ควรเลื่อนได้)';
+        status.style.background = '#2563eb';
+      }
+
+      window.scrollTo({top: 0, behavior: 'smooth'});
+    }
+
+    // Log scroll events
+    let scrollCount = 0;
+    window.addEventListener('scroll', () => {
+      scrollCount++;
+      console.log('Scroll event #' + scrollCount + ', position:', window.pageYOffset);
+    });
+
+    // Log touch events
+    let touchCount = 0;
+    document.addEventListener('touchstart', (e) => {
+      touchCount++;
+      console.log('Touch #' + touchCount + ' start at Y:', e.touches[0].clientY);
+    });
+
+    let moveCount = 0;
+    document.addEventListener('touchmove', (e) => {
+      moveCount++;
+      if (moveCount % 10 === 0) { // Log every 10th move to avoid spam
+        console.log('Touch move #' + moveCount + ' at Y:', e.touches[0].clientY);
+      }
+    });
+
+    document.addEventListener('touchend', () => {
+      console.log('Touch end. Total moves:', moveCount);
+      moveCount = 0;
+    });
+  </script>
+</body>
+</html>

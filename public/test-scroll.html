@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=5, user-scalable=yes">
+  <title>Test Scroll</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      height: auto;
+      min-height: 100vh;
+      overflow-y: auto;
+      touch-action: manipulation;
+    }
+
+    body {
+      height: auto;
+      min-height: 100vh;
+      overflow-y: auto;
+      touch-action: manipulation;
+      font-family: sans-serif;
+      padding: 20px;
+      background: linear-gradient(135deg, #eef5ff 0%, #e3ecff 55%, #f7fbff 100%);
+    }
+
+    /* ทดสอบกรณีที่ 1: ไม่มี body::before */
+    body.test-1 {
+      /* ไม่มี ::before */
+    }
+
+    /* ทดสอบกรณีที่ 2: มี body::before แบบเดิม */
+    body.test-2::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      background-image: linear-gradient(
+        120deg,
+        rgba(59, 130, 246, 0.08) 0%,
+        transparent 45%
+      );
+      pointer-events: none;
+      z-index: 0;
+      will-change: transform;
+      transform: translateZ(0);
+    }
+
+    .content {
+      position: relative;
+      z-index: 1;
+    }
+
+    .box {
+      background: white;
+      border: 2px solid #3b82f6;
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+
+    h1 {
+      color: #1e40af;
+      margin-bottom: 20px;
+    }
+
+    button {
+      background: #3b82f6;
+      color: white;
+      border: none;
+      padding: 12px 24px;
+      border-radius: 8px;
+      font-size: 16px;
+      cursor: pointer;
+      margin: 10px 10px 10px 0;
+    }
+
+    button:active {
+      background: #2563eb;
+    }
+  </style>
+</head>
+<body class="test-1">
+  <div class="content">
+    <h1>🔍 Test Mobile Scrolling</h1>
+
+    <div class="box">
+      <h2>ทดสอบ 1: ไม่มี body::before</h2>
+      <button onclick="document.body.className='test-1'">ทดสอบ 1</button>
+      <p>เลื่อนลงไปด้านล่างแล้วกลับมากดปุ่มนี้</p>
+    </div>
+
+    <div class="box">
+      <h2>ทดสอบ 2: มี body::before (position: fixed)</h2>
+      <button onclick="document.body.className='test-2'">ทดสอบ 2</button>
+      <p>ถ้าเลื่อนไม่ได้ แสดงว่าปัญหาอยู่ที่ body::before</p>
+    </div>
+
+    <div class="box">
+      <h2>📱 วิธีทดสอบ</h2>
+      <ol style="padding-left: 20px; line-height: 1.8;">
+        <li>กดปุ่ม "ทดสอบ 1" → เลื่อนลง → เลื่อนขึ้น</li>
+        <li>กดปุ่ม "ทดสอบ 2" → เลื่อนลง → เลื่อนขึ้น</li>
+        <li>ถ้าทดสอบ 1 ลื่นไหล แต่ทดสอบ 2 เลื่อนไม่ได้ = ปัญหาที่ body::before</li>
+      </ol>
+    </div>
+
+    <!-- สร้างเนื้อหายาวเพื่อให้ต้องเลื่อน -->
+    <div class="box" style="background: #fef3c7;">
+      <h3>📦 Box 1</h3>
+      <p>เนื้อหาทดสอบ...</p>
+    </div>
+
+    <div class="box" style="background: #dbeafe;">
+      <h3>📦 Box 2</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #ddd6fe;">
+      <h3>📦 Box 3</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fce7f3;">
+      <h3>📦 Box 4</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #d1fae5;">
+      <h3>📦 Box 5</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fed7aa;">
+      <h3>📦 Box 6</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fbcfe8;">
+      <h3>📦 Box 7</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #bfdbfe;">
+      <h3>📦 Box 8 (กลาง)</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fef3c7;">
+      <h3>📦 Box 9</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #dbeafe;">
+      <h3>📦 Box 10</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #ddd6fe;">
+      <h3>📦 Box 11</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fce7f3;">
+      <h3>📦 Box 12</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #d1fae5;">
+      <h3>📦 Box 13</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fed7aa;">
+      <h3>📦 Box 14</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #fbcfe8;">
+      <h3>📦 Box 15</h3>
+      <p>เลื่อนต่อไป...</p>
+    </div>
+
+    <div class="box" style="background: #bfdbfe;">
+      <h3>✅ Box 16 (ล่างสุด)</h3>
+      <p>ถ้าเห็นข้อความนี้ แสดงว่าเลื่อนได้!</p>
+      <button onclick="window.scrollTo({top: 0, behavior: 'smooth'})">🔝 กลับไปด้านบน</button>
+    </div>
+  </div>
+
+  <script>
+    // Log scroll events
+    let lastScroll = 0;
+    window.addEventListener('scroll', () => {
+      const currentScroll = window.pageYOffset;
+      console.log('Scroll position:', currentScroll, 'Delta:', currentScroll - lastScroll);
+      lastScroll = currentScroll;
+    });
+
+    // Log touch events
+    document.addEventListener('touchstart', (e) => {
+      console.log('Touch start:', e.touches[0].clientY);
+    });
+
+    document.addEventListener('touchmove', (e) => {
+      console.log('Touch move:', e.touches[0].clientY);
+    });
+
+    document.addEventListener('touchend', () => {
+      console.log('Touch end');
+    });
+  </script>
+</body>
+</html>

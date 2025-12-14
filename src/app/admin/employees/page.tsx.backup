@@ -1,0 +1,1801 @@
+"use client";
+
+import React, { useEffect, useId, useMemo, useState } from "react";
+import type { EmployeeRecord, StoreRecord } from "@/lib/supabaseDirectory";
+import {
+  REGION_BY_PROVINCE,
+  THAI_PROVINCES,
+  THAI_REGIONS,
+} from "@/lib/thaiGeography";
+import { useModal } from "@/contexts/ModalContext";
+import { User, Phone, Calendar, MapPin, Map as MapIcon, Building2, Info, Edit2, Trash2, X, UserPlus, ChevronDown, ChevronUp } from "lucide-react";
+
+type DraftEmployee = Pick<
+  EmployeeRecord,
+  | "id"
+  | "name"
+  | "employeeCode"
+  | "phone"
+  | "regularDayOff"
+  | "province"
+  | "region"
+  | "defaultStoreId"
+  | "createdAt"
+  | "updatedAt"
+>;
+
+type EmployeeFormState = {
+  name: string;
+  employeeCode: string;
+  phone: string;
+  regularDayOff: string;
+  province: string;
+  region: string;
+  defaultStoreId: string;
+  selectedStoreIds: string[];
+  primaryStoreId: string;
+  targetRevenuePC: string; // เป้าหมายยอดขาย (บาท)
+  targetQuantity: string; // เป้าหมายจำนวนขาย (ชิ้น) - optional
+};
+
+const EMPTY_FORM: EmployeeFormState = {
+  name: "",
+  employeeCode: "",
+  phone: "",
+  regularDayOff: "",
+  province: "",
+  region: "",
+  defaultStoreId: "",
+  selectedStoreIds: [],
+  primaryStoreId: "",
+  targetRevenuePC: "",
+  targetQuantity: "",
+};
+
+const DAY_OFF_OPTIONS = [
+  "",
+  "จันทร์",
+  "อังคาร",
+  "พุธ",
+  "พฤหัสบดี",
+  "ศุกร์",
+  "เสาร์",
+  "อาทิตย์",
+  "สลับ/ไม่แน่นอน",
+];
+
+type StoreOption = Pick<StoreRecord, "id" | "name" | "province">;
+
+interface EmployeeStoreAssignment {
+  id: string;
+  employeeId: string;
+  storeId: string;
+  storeName: string;
+  isPrimary: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function buildPayload(input: EmployeeFormState) {
+  return {
+    name: input.name.trim(),
+    employeeCode: input.employeeCode.trim() || undefined,
+    phone: input.phone.trim() || undefined,
+    regularDayOff: input.regularDayOff.trim() || undefined,
+    province: input.province.trim() || undefined,
+    region: input.region.trim() || undefined,
+    defaultStoreId: input.defaultStoreId || undefined,
+  };
+}
+
+const DETAIL_MODAL_ID = "employee-detail";
+const EDIT_MODAL_ID = "employee-edit-mobile";
+const ADD_MODAL_ID = "employee-add-mobile";
+
+export default function EmployeesPage() {
+  const { openModal, closeModal } = useModal();
+  const [employees, setEmployees] = useState<DraftEmployee[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [isSaving, setIsSaving] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [stores, setStores] = useState<StoreOption[]>([]);
+  const [isLoadingStores, setIsLoadingStores] = useState(true);
+  const [storeError, setStoreError] = useState<string | null>(null);
+
+  const [newEmployee, setNewEmployee] =
+    useState<EmployeeFormState>(EMPTY_FORM);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingDraft, setEditingDraft] = useState<EmployeeFormState | null>(null);
+  const [isLoadingAssignments, setIsLoadingAssignments] = useState(false);
+  const [detailEmployee, setDetailEmployee] = useState<DraftEmployee | null>(null);
+  const [detailAssignments, setDetailAssignments] = useState<EmployeeStoreAssignment[]>([]);
+  const [isMobileEditModalOpen, setIsMobileEditModalOpen] = useState(false);
+  const [isMobileAddModalOpen, setIsMobileAddModalOpen] = useState(false);
+  const [allEmployeeAssignments, setAllEmployeeAssignments] = useState<Map<string, EmployeeStoreAssignment[]>>(new Map());
+  const [expandedEmployeeIds, setExpandedEmployeeIds] = useState<Set<string>>(new Set());
+
+  const rawProvinceListId = useId();
+  const provinceDatalistId = `${rawProvinceListId}-province-options`.replace(/:/g, "-");
+
+  useEffect(() => {
+    void refreshEmployees();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let isActive = true;
+    const loadStores = async () => {
+      setIsLoadingStores(true);
+      setStoreError(null);
+      try {
+        const response = await fetch("/api/admin/stores");
+        if (!response.ok) {
+          throw new Error("ไม่สามารถโหลดรายชื่อร้าน/หน่วยงานได้");
+        }
+        const data = (await response.json()) as { stores?: StoreOption[] };
+        if (!isActive) return;
+        const list = Array.isArray(data.stores) ? data.stores : [];
+        setStores(list);
+      } catch (err) {
+        if (!isActive) return;
+        const message =
+          err instanceof Error ? err.message : "ไม่สามารถโหลดรายชื่อร้าน/หน่วยงานได้";
+        setStores([]);
+        setStoreError(message);
+      } finally {
+        if (isActive) {
+          setIsLoadingStores(false);
+        }
+      }
+    };
+    void loadStores();
+    return () => {
+      isActive = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!successMessage) return;
+    const timer = setTimeout(() => setSuccessMessage(null), 2500);
+    return () => clearTimeout(timer);
+  }, [successMessage]);
+
+  // Control SiteNav visibility for detail modal
+  useEffect(() => {
+    if (detailEmployee) {
+      openModal(DETAIL_MODAL_ID);
+      // Load assignments for detail view
+      void loadDetailAssignments(detailEmployee.id);
+    } else {
+      closeModal(DETAIL_MODAL_ID);
+      setDetailAssignments([]);
+    }
+  }, [detailEmployee, openModal, closeModal]);
+
+  // Control SiteNav visibility for mobile edit modal
+  useEffect(() => {
+    if (isMobileEditModalOpen && editingId) {
+      openModal(EDIT_MODAL_ID);
+    } else {
+      closeModal(EDIT_MODAL_ID);
+    }
+  }, [isMobileEditModalOpen, editingId, openModal, closeModal]);
+
+  // Control SiteNav visibility for mobile add modal
+  useEffect(() => {
+    if (isMobileAddModalOpen) {
+      openModal(ADD_MODAL_ID);
+    } else {
+      closeModal(ADD_MODAL_ID);
+    }
+  }, [isMobileAddModalOpen, openModal, closeModal]);
+
+  const loadDetailAssignments = async (employeeId: string) => {
+    try {
+      const response = await fetch(`/api/admin/employees/${employeeId}/stores`);
+      if (response.ok) {
+        const data = await response.json() as { assignments?: EmployeeStoreAssignment[] };
+        setDetailAssignments(data.assignments ?? []);
+      }
+    } catch (err) {
+      console.error('Failed to load assignments:', err);
+    }
+  };
+
+  const refreshEmployees = async () => {
+    setIsLoading(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/employees");
+      if (!response.ok) {
+        throw new Error("ไม่สามารถโหลดรายชื่อพนักงานได้");
+      }
+      const data = (await response.json()) as { employees?: DraftEmployee[] };
+      const employeeList = Array.isArray(data.employees) ? data.employees : [];
+      setEmployees(employeeList);
+
+      // Load assignments for all employees
+      void loadAllEmployeeAssignments(employeeList.map(e => e.id));
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถโหลดรายชื่อพนักงานได้";
+      setError(message);
+      setEmployees([]);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const toggleStoresExpanded = (employeeId: string) => {
+    setExpandedEmployeeIds(prev => {
+      const newSet = new Set(prev);
+      if (newSet.has(employeeId)) {
+        newSet.delete(employeeId);
+      } else {
+        newSet.add(employeeId);
+      }
+      return newSet;
+    });
+  };
+
+  const loadAllEmployeeAssignments = async (employeeIds: string[]) => {
+    try {
+      if (employeeIds.length === 0) {
+        setAllEmployeeAssignments(new Map());
+        return;
+      }
+
+      // ✅ Batch API - Single request for all employees
+      const response = await fetch('/api/admin/employees/assignments/batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ employeeIds }),
+      });
+
+      if (!response.ok) {
+        console.warn('Failed to load batch assignments');
+        setAllEmployeeAssignments(new Map());
+        return;
+      }
+
+      const data = (await response.json()) as {
+        success?: boolean;
+        assignments?: Record<string, EmployeeStoreAssignment[]>;
+      };
+
+      // Convert Record to Map
+      const assignmentsMap = new Map<string, EmployeeStoreAssignment[]>();
+      if (data.assignments) {
+        Object.entries(data.assignments).forEach(([employeeId, assignments]) => {
+          assignmentsMap.set(employeeId, assignments);
+        });
+      }
+
+      setAllEmployeeAssignments(assignmentsMap);
+    } catch (error) {
+      console.error("Error loading employee assignments:", error);
+      setAllEmployeeAssignments(new Map());
+    }
+  };
+
+  const loadStoreAssignments = async (employeeId: string) => {
+    try {
+      const response = await fetch(`/api/admin/employees/${employeeId}/stores`);
+      if (!response.ok) {
+        console.warn("Could not load store assignments");
+        return { storeIds: [], primaryStoreId: "" };
+      }
+      const data = (await response.json()) as {
+        success: boolean;
+        assignments?: EmployeeStoreAssignment[];
+      };
+      if (!data.success || !data.assignments) {
+        return { storeIds: [], primaryStoreId: "" };
+      }
+      const storeIds = data.assignments.map((a) => a.storeId);
+      const primaryAssignment = data.assignments.find((a) => a.isPrimary);
+      const primaryStoreId = primaryAssignment?.storeId ?? "";
+      return { storeIds, primaryStoreId };
+    } catch (err) {
+      console.error("Error loading store assignments:", err);
+      return { storeIds: [], primaryStoreId: "" };
+    }
+  };
+
+  const saveStoreAssignments = async (
+    employeeId: string,
+    storeIds: string[],
+    primaryStoreId: string,
+  ) => {
+    try {
+      const response = await fetch(`/api/admin/employees/${employeeId}/stores`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          storeIds,
+          primaryStoreId: primaryStoreId || null,
+        }),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.error ?? "ไม่สามารถบันทึกร้านค้าได้");
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถบันทึกร้านค้าได้";
+      throw new Error(message);
+    }
+  };
+
+  const loadEmployeeTarget = async (employeeId: string) => {
+    try {
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+      const response = await fetch(
+        `/api/admin/targets?employeeId=${employeeId}&month=${currentMonth}`
+      );
+      if (!response.ok) {
+        console.warn("Could not load employee target");
+        return { targetRevenuePC: "", targetQuantity: "" };
+      }
+      const data = (await response.json()) as {
+        ok: boolean;
+        targets?: Array<{
+          target_revenue_pc: number | null;
+          target_quantity: number | null;
+        }>;
+      };
+      if (!data.ok || !data.targets || data.targets.length === 0) {
+        return { targetRevenuePC: "", targetQuantity: "" };
+      }
+      const target = data.targets[0];
+      return {
+        targetRevenuePC: target.target_revenue_pc?.toString() ?? "",
+        targetQuantity: target.target_quantity?.toString() ?? "",
+      };
+    } catch (err) {
+      console.error("Error loading employee target:", err);
+      return { targetRevenuePC: "", targetQuantity: "" };
+    }
+  };
+
+  const saveEmployeeTarget = async (
+    employeeId: string,
+    employeeName: string,
+    targetRevenuePC: string,
+    targetQuantity: string,
+  ) => {
+    try {
+      const now = new Date();
+      const currentMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+
+      const revenuePCNum = targetRevenuePC ? parseFloat(targetRevenuePC) : null;
+      const quantityNum = targetQuantity ? parseFloat(targetQuantity) : null;
+
+      if (!revenuePCNum) {
+        throw new Error("กรุณาระบุเป้าหมายยอดขาย");
+      }
+
+      // Determine target type
+      let targetType: "revenue" | "quantity" | "both" = "revenue";
+      if (revenuePCNum && quantityNum) {
+        targetType = "both";
+      } else if (quantityNum) {
+        targetType = "quantity";
+      }
+
+      // Check if target exists for this month
+      const existingRes = await fetch(
+        `/api/admin/targets?employeeId=${employeeId}&month=${currentMonth}`
+      );
+      const existingData = (await existingRes.json()) as {
+        ok: boolean;
+        targets?: Array<{ id: string }>;
+      };
+
+      if (existingData.ok && existingData.targets && existingData.targets.length > 0) {
+        // Update existing target
+        const targetId = existingData.targets[0].id;
+        const response = await fetch(`/api/admin/targets/${targetId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetRevenuePC: revenuePCNum,
+            targetQuantity: quantityNum,
+            targetType,
+          }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.message ?? "ไม่สามารถอัปเดตเป้าหมายได้");
+        }
+      } else {
+        // Create new target
+        const response = await fetch("/api/admin/targets", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            employeeId,
+            employeeName,
+            targetMonth: currentMonth,
+            targetType,
+            targetRevenuePC: revenuePCNum,
+            targetQuantity: quantityNum,
+          }),
+        });
+        if (!response.ok) {
+          const data = await response.json().catch(() => null);
+          throw new Error(data?.message ?? "ไม่สามารถสร้างเป้าหมายได้");
+        }
+      }
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถบันทึกเป้าหมายได้";
+      throw new Error(message);
+    }
+  };
+
+  const handleCreate = async () => {
+    const payload = buildPayload(newEmployee);
+    if (!payload.name) {
+      setError("กรุณาระบุชื่อพนักงาน");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      const response = await fetch("/api/admin/employees", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message ?? "ไม่สามารถเพิ่มพนักงานได้");
+      }
+      const result = (await response.json()) as { ok: boolean; employee?: DraftEmployee };
+      const createdEmployee = result.employee;
+
+      // Save store assignments if any stores are selected
+      if (createdEmployee && newEmployee.selectedStoreIds.length > 0) {
+        try {
+          await saveStoreAssignments(
+            createdEmployee.id,
+            newEmployee.selectedStoreIds,
+            newEmployee.primaryStoreId,
+          );
+        } catch (storeErr) {
+          // Don't fail the entire operation if store assignment fails
+          console.error("Store assignment error:", storeErr);
+          setError(
+            "เพิ่มพนักงานสำเร็จแล้ว แต่ไม่สามารถบันทึกร้านค้าได้ กรุณาลองแก้ไขพนักงานอีกครั้ง",
+          );
+        }
+      }
+
+      // Save employee target for current month
+      if (createdEmployee && newEmployee.targetRevenuePC) {
+        try {
+          await saveEmployeeTarget(
+            createdEmployee.id,
+            createdEmployee.name,
+            newEmployee.targetRevenuePC,
+            newEmployee.targetQuantity,
+          );
+        } catch (targetErr) {
+          console.error("Target save error:", targetErr);
+          // Don't fail the entire operation
+          setError(
+            "เพิ่มพนักงานสำเร็จแล้ว แต่ไม่สามารถบันทึกเป้าหมายได้ กรุณาลองแก้ไขพนักงานอีกครั้ง",
+          );
+        }
+      }
+
+      setNewEmployee(EMPTY_FORM);
+      setSuccessMessage("เพิ่มรายชื่อพนักงานเรียบร้อย");
+      setIsMobileAddModalOpen(false); // Close mobile modal
+      await refreshEmployees();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถเพิ่มพนักงานได้";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleEdit = async (employee: DraftEmployee) => {
+    setEditingId(employee.id);
+    setIsLoadingAssignments(true);
+
+    // Load store assignments
+    const { storeIds, primaryStoreId } = await loadStoreAssignments(employee.id);
+
+    // Load current month's target
+    const { targetRevenuePC, targetQuantity } = await loadEmployeeTarget(employee.id);
+
+    // Use primaryStoreId if available, otherwise fallback to employee.defaultStoreId
+    const effectiveDefaultStoreId = primaryStoreId || employee.defaultStoreId || "";
+
+    const draftData = {
+      name: employee.name ?? "",
+      employeeCode: employee.employeeCode ?? "",
+      phone: employee.phone ?? "",
+      regularDayOff: employee.regularDayOff ?? "",
+      province: employee.province ?? "",
+      region: employee.region ?? "",
+      defaultStoreId: effectiveDefaultStoreId,
+      selectedStoreIds: storeIds,
+      primaryStoreId: primaryStoreId,
+      targetRevenuePC: targetRevenuePC,
+      targetQuantity: targetQuantity,
+    };
+
+
+    setEditingDraft(draftData);
+    setIsLoadingAssignments(false);
+  };
+
+  const handleUpdate = async () => {
+    if (!editingId || !editingDraft) return;
+    const payload = buildPayload(editingDraft);
+    if (!payload.name) {
+      setError("กรุณาระบุชื่อพนักงาน");
+      return;
+    }
+    setIsSaving(true);
+    setError(null);
+    try {
+      // Update employee data
+      const response = await fetch(`/api/admin/employees/${editingId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message ?? "ไม่สามารถแก้ไขพนักงานได้");
+      }
+
+      const result = (await response.json()) as { ok: boolean; employee?: DraftEmployee };
+      const updatedEmployee = result.employee;
+
+      // Update store assignments
+      try {
+        await saveStoreAssignments(
+          editingId,
+          editingDraft.selectedStoreIds,
+          editingDraft.primaryStoreId,
+        );
+      } catch (storeErr) {
+        console.error("Store assignment error:", storeErr);
+        setError(
+          "แก้ไขข้อมูลพนักงานสำเร็จแล้ว แต่ไม่สามารถบันทึกร้านค้าได้ กรุณาลองแก้ไขอีกครั้ง",
+        );
+      }
+
+      // Update employee target for current month
+      if (updatedEmployee && editingDraft.targetRevenuePC) {
+        try {
+          await saveEmployeeTarget(
+            updatedEmployee.id,
+            updatedEmployee.name,
+            editingDraft.targetRevenuePC,
+            editingDraft.targetQuantity,
+          );
+        } catch (targetErr) {
+          console.error("Target update error:", targetErr);
+          // Don't fail the entire operation
+          setError(
+            "แก้ไขข้อมูลพนักงานสำเร็จแล้ว แต่ไม่สามารถบันทึกเป้าหมายได้ กรุณาลองแก้ไขอีกครั้ง",
+          );
+        }
+      }
+
+      setEditingId(null);
+      setEditingDraft(null);
+      setIsMobileEditModalOpen(false); // Close mobile modal
+      setSuccessMessage("อัปเดตข้อมูลพนักงานเรียบร้อย");
+      await refreshEmployees();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถแก้ไขพนักงานได้";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("ต้องการลบรายชื่อพนักงานนี้หรือไม่?")) return;
+    setIsSaving(true);
+    setError(null);
+    try {
+      const response = await fetch(`/api/admin/employees/${id}`, {
+        method: "DELETE",
+      });
+      if (!response.ok) {
+        const data = await response.json().catch(() => null);
+        throw new Error(data?.message ?? "ไม่สามารถลบพนักงานได้");
+      }
+      setSuccessMessage("ลบรายชื่อพนักงานเรียบร้อย");
+      await refreshEmployees();
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "ไม่สามารถลบพนักงานได้";
+      setError(message);
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const sortedEmployees = useMemo(
+    () =>
+      employees
+        .slice()
+        .sort((a, b) => a.name.localeCompare(b.name, "th-TH")),
+    [employees],
+  );
+
+  const onProvinceChange = (
+    value: string,
+    setState: (updater: (prev: EmployeeFormState) => EmployeeFormState) => void,
+  ) => {
+    const trimmed = value;
+    const region = REGION_BY_PROVINCE.get(trimmed) ?? "";
+    setState((prev) => ({
+      ...prev,
+      province: trimmed,
+      region: region || prev.region,
+    }));
+  };
+
+  function toggleStoreSelection(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>>,
+  ): void;
+  function toggleStoreSelection(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): void;
+  function toggleStoreSelection(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>> | React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): void {
+    (setState as React.Dispatch<React.SetStateAction<EmployeeFormState | null>>)((prev: EmployeeFormState | null) => {
+      if (!prev) return prev;
+      const isCurrentlySelected = prev.selectedStoreIds.includes(storeId);
+      let newSelectedStoreIds: string[];
+      let newPrimaryStoreId = prev.primaryStoreId;
+
+      if (isCurrentlySelected) {
+        // Remove store
+        newSelectedStoreIds = prev.selectedStoreIds.filter((id) => id !== storeId);
+        // If removing primary store, clear primary
+        if (prev.primaryStoreId === storeId) {
+          newPrimaryStoreId = "";
+        }
+      } else {
+        // Add store
+        newSelectedStoreIds = [...prev.selectedStoreIds, storeId];
+      }
+
+      return {
+        ...prev,
+        selectedStoreIds: newSelectedStoreIds,
+        primaryStoreId: newPrimaryStoreId,
+      };
+    });
+  }
+
+  function setPrimaryStore(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>>,
+  ): void;
+  function setPrimaryStore(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): void;
+  function setPrimaryStore(
+    storeId: string,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>> | React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): void {
+    (setState as React.Dispatch<React.SetStateAction<EmployeeFormState | null>>)((prev: EmployeeFormState | null) => {
+      if (!prev) return prev;
+      return {
+        ...prev,
+        primaryStoreId: storeId,
+        defaultStoreId: storeId, // Sync defaultStoreId with primaryStoreId
+      };
+    });
+  }
+
+  function renderStoreSelector(
+    formState: EmployeeFormState,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>>,
+  ): React.ReactElement;
+  function renderStoreSelector(
+    formState: EmployeeFormState,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): React.ReactElement;
+  function renderStoreSelector(
+    formState: EmployeeFormState,
+    setState: React.Dispatch<React.SetStateAction<EmployeeFormState>> | React.Dispatch<React.SetStateAction<EmployeeFormState | null>>,
+  ): React.ReactElement {
+    if (isLoadingStores) {
+      return (
+        <div className="mt-1 form-input flex h-[52px] items-center justify-center text-xs text-slate-400">
+          กำลังโหลดรายชื่อร้าน/หน่วยงาน...
+        </div>
+      );
+    }
+
+    if (stores.length === 0) {
+      return (
+        <div className="mt-1 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-xs text-amber-600">
+          ยังไม่มีข้อมูลร้าน/หน่วยงาน กรุณาเพิ่มก่อนกำหนดพื้นที่รับผิดชอบ
+        </div>
+      );
+    }
+
+    return (
+      <div className="mt-2 space-y-2 rounded-2xl border border-slate-200 bg-slate-50/50 p-4">
+        <p className="text-xs font-medium text-slate-600">
+          เลือกร้านค้าที่รับผิดชอบ (เลือกได้หลายร้าน):
+        </p>
+        <div className="space-y-2">
+          {stores.map((store) => {
+            const isSelected = formState.selectedStoreIds.includes(store.id);
+            const isPrimary = formState.primaryStoreId === store.id;
+            const label = store.province
+              ? `${store.name} (${store.province})`
+              : store.name;
+
+            return (
+              <div
+                key={store.id}
+                className="flex items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 py-2"
+              >
+                <input
+                  type="checkbox"
+                  id={`store-${store.id}`}
+                  checked={isSelected}
+                  onChange={() => toggleStoreSelection(store.id, setState as React.Dispatch<React.SetStateAction<EmployeeFormState | null>>)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-2 focus:ring-blue-500 focus:ring-offset-2"
+                />
+                <label
+                  htmlFor={`store-${store.id}`}
+                  className="flex-1 text-sm text-slate-700 cursor-pointer"
+                >
+                  {label}
+                </label>
+                {isSelected && (
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      id={`primary-${store.id}`}
+                      name="primary-store"
+                      checked={isPrimary}
+                      onChange={() => setPrimaryStore(store.id, setState as React.Dispatch<React.SetStateAction<EmployeeFormState | null>>)}
+                      className="h-4 w-4 border-slate-300 text-emerald-600 focus:ring-2 focus:ring-emerald-500 focus:ring-offset-2"
+                    />
+                    <label
+                      htmlFor={`primary-${store.id}`}
+                      className="text-xs font-medium text-emerald-600 cursor-pointer whitespace-nowrap"
+                    >
+                      ร้านหลัก
+                    </label>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+        {formState.selectedStoreIds.length > 0 && !formState.primaryStoreId && (
+          <p className="text-xs text-amber-600 mt-2">
+            💡 แนะนำ: เลือกร้านหลักสำหรับพนักงาน (คลิกวงกลม &ldquo;ร้านหลัก&rdquo;)
+          </p>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="space-y-4 sm:space-y-6">
+      <header className="space-y-2">
+        <h1 className="text-lg sm:text-xl font-semibold text-slate-900">
+          จัดการรายชื่อพนักงาน
+        </h1>
+        <p className="text-xs sm:text-sm text-slate-500">
+          รายชื่อนี้จะใช้แสดงใน dropdown ของฟอร์มลงเวลาและบันทึกยอดขาย
+        </p>
+      </header>
+
+      {error && (
+        <div className="rounded-3xl border border-red-100 bg-red-50/90 px-5 py-3 text-sm text-red-600 shadow-inner">
+          {error}
+        </div>
+      )}
+      {successMessage && (
+        <div className="rounded-3xl border border-emerald-200 bg-emerald-50/80 px-5 py-3 text-sm text-emerald-600 shadow-inner">
+          {successMessage}
+        </div>
+      )}
+
+      {/* Quick Access Card - All Devices */}
+      <button
+        type="button"
+        onClick={() => setIsMobileAddModalOpen(true)}
+        className="group w-full rounded-2xl border-2 border-blue-200 bg-gradient-to-br from-white via-blue-50/40 to-sky-50/60 p-6 md:p-8 text-center transition-all hover:border-blue-300 hover:shadow-2xl hover:shadow-blue-200/30 active:scale-[0.99]"
+      >
+        <div className="flex flex-col items-center gap-4">
+          <div className="relative">
+            <div className="absolute inset-0 bg-gradient-to-br from-blue-400 to-indigo-500 rounded-2xl blur-xl opacity-40 group-hover:opacity-60 transition-opacity" />
+            <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-600 via-sky-500 to-indigo-600 shadow-xl shadow-blue-500/40">
+              <UserPlus className="h-8 w-8 text-white" />
+            </div>
+          </div>
+          <div>
+            <p className="text-lg font-bold text-slate-900 mb-1">เพิ่มพนักงานใหม่</p>
+            <p className="text-sm text-blue-600 font-medium">คลิกเพื่อเปิดฟอร์มกรอกข้อมูล</p>
+          </div>
+        </div>
+      </button>
+
+      <section className="space-y-3 rounded-3xl border border-white/70 bg-white/80 p-5 shadow-[0_24px_90px_-60px_rgba(37,99,235,0.35)]">
+        <div className="flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-slate-800">รายชื่อทั้งหมด</h2>
+          <button
+            type="button"
+            onClick={() => void refreshEmployees()}
+            className="text-xs font-semibold text-blue-600 underline-offset-4 hover:underline"
+          >
+            รีเฟรช
+          </button>
+        </div>
+
+        {isLoading ? (
+          <div className="rounded-2xl border border-dashed border-blue-200 px-4 py-6 text-center text-sm text-blue-500">
+            กำลังโหลดข้อมูล...
+          </div>
+        ) : sortedEmployees.length === 0 ? (
+          <div className="rounded-2xl border border-dashed border-blue-200 px-4 py-6 text-center text-sm text-blue-500">
+            ยังไม่มีข้อมูลพนักงาน เพิ่มรายชื่อเพื่อเริ่มต้นใช้งาน
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
+            {sortedEmployees.map((employee) => {
+              const isEditing = editingId === employee.id && editingDraft && !isMobileEditModalOpen;
+              const employeeAssignments = allEmployeeAssignments.get(employee.id) || [];
+              return (
+                <div
+                  key={employee.id}
+                  className="group relative overflow-hidden rounded-xl sm:rounded-2xl border border-slate-200 bg-gradient-to-br from-white via-blue-50/30 to-white shadow-sm transition-all hover:border-blue-300 hover:shadow-xl hover:scale-[1.02] flex flex-col"
+                >
+                  {isEditing && editingDraft ? (
+                    <div className="space-y-3">
+                      {isLoadingAssignments ? (
+                        <div className="text-center py-4 text-sm text-slate-500">
+                          กำลังโหลดข้อมูลร้านค้า...
+                        </div>
+                      ) : (
+                        <>
+                          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+                            <input
+                              value={editingDraft.name}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, name: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                              placeholder="ชื่อพนักงาน"
+                            />
+                            <input
+                              value={editingDraft.employeeCode}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, employeeCode: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                              placeholder="รหัสพนักงาน (ไม่บังคับ)"
+                            />
+                            <input
+                              value={editingDraft.phone}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, phone: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                              placeholder="เบอร์โทรศัพท์"
+                            />
+                            <select
+                              value={editingDraft.regularDayOff}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, regularDayOff: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                            >
+                              {DAY_OFF_OPTIONS.map((option) => (
+                                <option key={option || "none"} value={option}>
+                                  {option ? option : "— ไม่ระบุ —"}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              list={provinceDatalistId}
+                              value={editingDraft.province}
+                              onChange={(event) =>
+                                setEditingDraft((prev) => {
+                                  if (!prev) return prev;
+                                  const value = event.target.value;
+                                  const region =
+                                    REGION_BY_PROVINCE.get(value) ?? prev.region;
+                                  return {
+                                    ...prev,
+                                    province: value,
+                                    region,
+                                  };
+                                })
+                              }
+                              className="form-input"
+                              placeholder="จังหวัด"
+                            />
+                            <select
+                              value={editingDraft.region}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, region: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                            >
+                              <option value="">— ไม่ระบุ —</option>
+                              {THAI_REGIONS.map((region) => (
+                                <option key={region} value={region}>
+                                  {region}
+                                </option>
+                              ))}
+                            </select>
+                            <input
+                              type="number"
+                              value={editingDraft.targetRevenuePC}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, targetRevenuePC: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                              placeholder="เป้าหมายยอดขาย (บาท)"
+                              min="0"
+                              step="1000"
+                            />
+                            <input
+                              type="number"
+                              value={editingDraft.targetQuantity}
+                              onChange={(event) =>
+                                setEditingDraft((prev) =>
+                                  prev
+                                    ? { ...prev, targetQuantity: event.target.value }
+                                    : prev,
+                                )
+                              }
+                              className="form-input"
+                              placeholder="เป้าหมายจำนวนขาย (ชิ้น)"
+                              min="0"
+                              step="10"
+                            />
+                            <div className="md:col-span-2 xl:col-span-3">
+                              <label className="block text-xs font-semibold text-slate-600">
+                                ร้าน/หน่วยงานที่รับผิดชอบ
+                              </label>
+                              {renderStoreSelector(editingDraft, setEditingDraft)}
+                              {storeError && (
+                                <p className="mt-1 text-xs text-red-500">{storeError}</p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={handleUpdate}
+                              disabled={isSaving}
+                              className="rounded-full bg-blue-600 px-3 py-1 text-xs font-semibold text-white shadow hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-70"
+                            >
+                              บันทึก
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setEditingId(null);
+                                setEditingDraft(null);
+                              }}
+                              className="rounded-full border border-slate-200 px-3 py-1 text-xs font-semibold text-slate-500 hover:bg-slate-100"
+                            >
+                              ยกเลิก
+                            </button>
+                          </div>
+                        </>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="p-3 sm:p-4">
+                      {/* Mobile View - แสดงแบบย่อ */}
+                      <div className="flex flex-col gap-3 md:hidden">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center gap-2">
+                              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex-shrink-0">
+                                <User className="h-5 w-5 text-white" />
+                              </div>
+                              <div className="min-w-0 flex-1">
+                                <p className="text-base font-semibold text-slate-900 leading-tight">{employee.name}</p>
+                                {employee.employeeCode && (
+                                  <p className="text-xs text-slate-500">{employee.employeeCode}</p>
+                                )}
+                              </div>
+                            </div>
+                            <div className="mt-2 flex items-center flex-wrap gap-2">
+                              {employee.phone && (
+                                <span className="inline-flex items-center gap-1.5 rounded-md bg-blue-50 px-2 py-1 text-xs font-medium text-blue-700">
+                                  <Phone className="h-3 w-3" />
+                                  {employee.phone}
+                                </span>
+                              )}
+                              {employee.province && (
+                                <span className="inline-flex items-center gap-1.5 rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-700">
+                                  <MapPin className="h-3 w-3 text-slate-500" />
+                                  {employee.province}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+
+                        <button
+                          type="button"
+                          onClick={() => setDetailEmployee(employee)}
+                          className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg bg-slate-50 px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-100 transition-colors"
+                        >
+                          <Info className="h-3.5 w-3.5" />
+                          ดูรายละเอียดเพิ่มเติม
+                        </button>
+
+                        <div className="flex items-center gap-2 pt-2 border-t border-slate-100">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              void handleEdit(employee);
+                              setIsMobileEditModalOpen(true);
+                            }}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300 transition-all"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                            แก้ไข
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(employee.id)}
+                            className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-red-600 hover:bg-red-50 hover:border-red-200 transition-all"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            ลบ
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Desktop View - Vertical Card */}
+                      <div className="hidden md:flex flex-col items-center h-full">
+                        {/* Avatar */}
+                        <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-blue-500 via-sky-500 to-blue-400 shadow-lg mb-3">
+                          <User className="h-8 w-8 text-white" strokeWidth={2.5} />
+                        </div>
+
+                        {/* Name & Code */}
+                        <div className="text-center mb-3">
+                          <p className="font-bold text-slate-900 text-base leading-tight">
+                            {employee.name}
+                          </p>
+                          {employee.employeeCode && (
+                            <p className="text-xs text-slate-500 mt-1">
+                              {employee.employeeCode}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Info Badges */}
+                        <div className="flex flex-col gap-1.5 w-full mb-3">
+                          {employee.phone && (
+                            <div className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-100 rounded-lg px-2.5 py-1.5 text-blue-700">
+                              <Phone className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{employee.phone}</span>
+                            </div>
+                          )}
+                          {employee.regularDayOff && (
+                            <div className="flex items-center gap-2 text-xs bg-emerald-50 border border-emerald-100 rounded-lg px-2.5 py-1.5 text-emerald-700">
+                              <Calendar className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{employee.regularDayOff}</span>
+                            </div>
+                          )}
+                          {employee.province && (
+                            <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600">
+                              <MapPin className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{employee.province}</span>
+                            </div>
+                          )}
+                          {employee.region && (
+                            <div className="flex items-center gap-2 text-xs bg-slate-50 border border-slate-200 rounded-lg px-2.5 py-1.5 text-slate-600">
+                              <MapIcon className="h-3.5 w-3.5 flex-shrink-0" />
+                              <span className="truncate">{employee.region}</span>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Stores Section */}
+                        {employeeAssignments.length > 0 && (
+                          <div className="w-full mb-3">
+                            <button
+                              type="button"
+                              onClick={() => toggleStoresExpanded(employee.id)}
+                              className="w-full p-2.5 bg-gradient-to-br from-blue-50/50 to-sky-50/30 rounded-xl border border-blue-100 hover:from-blue-100/50 hover:to-sky-100/40 hover:border-blue-200 transition-all"
+                            >
+                              <div className="flex items-center justify-center gap-2">
+                                <Building2 className="h-4 w-4 text-blue-600" />
+                                <p className="text-xs font-bold text-blue-700">
+                                  {employeeAssignments.length} ร้าน
+                                </p>
+                                {expandedEmployeeIds.has(employee.id) ? (
+                                  <ChevronUp className="h-4 w-4 text-blue-600 ml-auto" />
+                                ) : (
+                                  <ChevronDown className="h-4 w-4 text-blue-600 ml-auto" />
+                                )}
+                              </div>
+                            </button>
+
+                            {/* Expanded Stores List */}
+                            {expandedEmployeeIds.has(employee.id) && (
+                              <div className="mt-2 space-y-1.5 animate-in slide-in-from-top-2 duration-200">
+                                {employeeAssignments.map((assignment) => (
+                                  <div
+                                    key={assignment.id}
+                                    className={`flex items-center gap-2 rounded-lg px-3 py-2 transition-all ${
+                                      assignment.isPrimary
+                                        ? 'bg-gradient-to-r from-blue-500 to-sky-500 text-white shadow-sm'
+                                        : 'bg-slate-50 border border-slate-200 text-slate-700'
+                                    }`}
+                                  >
+                                    <Building2 className={`h-3.5 w-3.5 flex-shrink-0 ${
+                                      assignment.isPrimary ? 'text-white' : 'text-slate-500'
+                                    }`} />
+                                    <span className="text-xs font-medium truncate flex-1">
+                                      {assignment.storeName}
+                                    </span>
+                                    {assignment.isPrimary && (
+                                      <span className="text-xs font-bold flex-shrink-0">⭐</span>
+                                    )}
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Actions - ด้านล่างสุด */}
+                        <div className="mt-auto w-full flex flex-col gap-2">
+                          <button
+                            type="button"
+                            onClick={() => void handleEdit(employee)}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-blue-200 bg-white px-3 py-2 text-xs font-medium text-blue-600 hover:bg-blue-50 hover:border-blue-300 transition-all shadow-sm"
+                          >
+                            <Edit2 className="h-3.5 w-3.5" />
+                            แก้ไข
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => void handleDelete(employee.id)}
+                            className="w-full inline-flex items-center justify-center gap-1.5 rounded-lg border border-slate-200 bg-white px-3 py-2 text-xs font-medium text-slate-500 hover:bg-slate-50 hover:border-slate-300 transition-all"
+                          >
+                            <Trash2 className="h-3.5 w-3.5" />
+                            ลบ
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
+      </section>
+
+      <datalist id={provinceDatalistId}>
+        {THAI_PROVINCES.map((province) => (
+          <option key={province.name} value={province.name}>
+            {province.name}
+          </option>
+        ))}
+      </datalist>
+
+      {/* Add Employee Modal - Stunning Design */}
+      {isMobileAddModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-end md:items-center justify-center bg-gradient-to-br from-slate-900/30 via-blue-900/20 to-indigo-900/30 backdrop-blur-md p-4" onClick={() => setIsMobileAddModalOpen(false)}>
+          <div className="w-full max-w-3xl rounded-t-3xl md:rounded-3xl bg-white shadow-2xl border-t md:border-2 border-white/50 max-h-[92vh] md:max-h-[88vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            {/* Stunning Header with Gradient */}
+            <div className="relative px-6 py-6 md:py-8 flex-shrink-0 overflow-hidden">
+              {/* Background Gradient */}
+              <div className="absolute inset-0 bg-gradient-to-br from-blue-600 via-sky-500 to-indigo-600" />
+              <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,_rgba(255,255,255,0.2),transparent_50%)]" />
+
+              {/* Content */}
+              <div className="relative flex items-center justify-between">
+                <div className="flex items-center gap-4">
+                  <div className="relative">
+                    <div className="absolute inset-0 bg-white/30 rounded-2xl blur-lg" />
+                    <div className="relative flex h-14 w-14 items-center justify-center rounded-2xl bg-white/20 backdrop-blur-sm border border-white/30">
+                      <UserPlus className="h-7 w-7 text-white" />
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-xl md:text-2xl font-bold text-white drop-shadow-lg">เพิ่มพนักงานใหม่</h2>
+                    <p className="text-sm text-blue-100 mt-0.5">กรอกข้อมูลพนักงานเพื่อเพิ่มเข้าระบบ</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsMobileAddModalOpen(false)}
+                  className="rounded-xl p-2 bg-white/10 hover:bg-white/20 backdrop-blur-sm border border-white/20 transition-all"
+                >
+                  <X className="h-5 w-5 text-white" />
+                </button>
+              </div>
+            </div>
+
+            {/* Form Content - Scrollable with Sections */}
+            <div className="p-5 md:p-6 space-y-6 overflow-y-auto flex-1 bg-gradient-to-b from-slate-50/50 to-white" style={{ touchAction: 'pan-y' }}>
+              {/* Section 1: ข้อมูลพื้นฐาน */}
+              <div className="space-y-4 p-4 md:p-5 rounded-2xl bg-white border border-blue-100 shadow-sm">
+                <div className="flex items-center gap-2 pb-3 border-b border-blue-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-sky-500">
+                    <User className="h-4 w-4 text-white" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">ข้อมูลพื้นฐาน</h3>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                    <User className="h-3.5 w-3.5 text-blue-600" />
+                    ชื่อพนักงาน *
+                  </label>
+                  <input
+                    value={newEmployee.name}
+                    onChange={(e) =>
+                      setNewEmployee((prev) => ({ ...prev, name: e.target.value }))
+                    }
+                    className="form-input w-full"
+                    placeholder="เช่น สุรเดช ใจดี"
+                  />
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                      รหัสพนักงาน
+                    </label>
+                    <input
+                      value={newEmployee.employeeCode}
+                      onChange={(e) =>
+                        setNewEmployee((prev) => ({ ...prev, employeeCode: e.target.value }))
+                      }
+                      className="form-input w-full"
+                      placeholder="EMP001 (ไม่บังคับ)"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                      <Phone className="h-3.5 w-3.5 text-blue-600" />
+                      เบอร์โทรศัพท์
+                    </label>
+                    <input
+                      type="tel"
+                      value={newEmployee.phone}
+                      onChange={(e) =>
+                        setNewEmployee((prev) => ({ ...prev, phone: e.target.value }))
+                      }
+                      className="form-input w-full"
+                      placeholder="0812345678"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                    <Calendar className="h-3.5 w-3.5 text-emerald-600" />
+                    วันหยุดประจำ
+                  </label>
+                  <select
+                    value={newEmployee.regularDayOff}
+                    onChange={(e) =>
+                      setNewEmployee((prev) => ({ ...prev, regularDayOff: e.target.value }))
+                    }
+                    className="form-input w-full"
+                  >
+                    {DAY_OFF_OPTIONS.map((option) => (
+                      <option key={option || "none"} value={option}>
+                        {option ? option : "— ไม่ระบุ —"}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              {/* Section 2: พื้นที่รับผิดชอบ */}
+              <div className="space-y-4 p-4 md:p-5 rounded-2xl bg-white border border-blue-100 shadow-sm">
+                <div className="flex items-center gap-2 pb-3 border-b border-blue-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-sky-500">
+                    <MapPin className="h-4 w-4 text-white" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">พื้นที่รับผิดชอบ</h3>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                      <MapPin className="h-3.5 w-3.5 text-slate-500" />
+                      จังหวัด
+                    </label>
+                    <input
+                      list={provinceDatalistId}
+                      value={newEmployee.province}
+                      onChange={(e) => onProvinceChange(e.target.value, setNewEmployee)}
+                      className="form-input w-full"
+                      placeholder="พิมพ์เพื่อค้นหา"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="flex items-center gap-2 text-xs font-semibold text-slate-700 mb-2">
+                      <MapIcon className="h-3.5 w-3.5 text-slate-500" />
+                      ภูมิภาค
+                    </label>
+                    <select
+                      value={newEmployee.region}
+                      onChange={(e) =>
+                        setNewEmployee((prev) => ({ ...prev, region: e.target.value }))
+                      }
+                      className="form-input w-full"
+                    >
+                      <option value="">— ไม่ระบุ —</option>
+                      {THAI_REGIONS.map((region) => (
+                        <option key={region} value={region}>
+                          {region}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Section 3: ร้านค้าที่รับผิดชอบ */}
+              <div className="space-y-4 p-4 md:p-5 rounded-2xl bg-white border border-blue-100 shadow-sm">
+                <div className="flex items-center gap-2 pb-3 border-b border-blue-100">
+                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-sky-500">
+                    <Building2 className="h-4 w-4 text-white" />
+                  </div>
+                  <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">ร้านค้าที่รับผิดชอบ</h3>
+                </div>
+
+                {renderStoreSelector(newEmployee, setNewEmployee)}
+                {storeError && (
+                  <div className="rounded-lg bg-red-50 border border-red-200 px-3 py-2 text-xs text-red-600">
+                    {storeError}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Footer - Stunning Action Buttons */}
+            <div className="relative border-t border-blue-100 p-4 md:p-5 flex-shrink-0 flex gap-3 bg-gradient-to-r from-slate-50 via-blue-50/30 to-sky-50/40">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileAddModalOpen(false);
+                  setNewEmployee(EMPTY_FORM);
+                }}
+                className="flex-1 md:flex-initial md:px-6 rounded-xl border-2 border-slate-300 bg-white px-4 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50 hover:border-slate-400 transition-all shadow-sm"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleCreate()}
+                disabled={isSaving}
+                className="relative flex-1 md:flex-[2] rounded-xl bg-gradient-to-r from-blue-600 via-sky-500 to-indigo-600 px-6 py-3 text-sm font-bold text-white hover:from-blue-700 hover:via-sky-600 hover:to-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed transition-all shadow-xl shadow-blue-500/40 hover:shadow-2xl hover:shadow-blue-600/50 overflow-hidden"
+              >
+                <span className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent translate-x-[-200%] group-hover:translate-x-[200%] transition-transform duration-1000" />
+                <span className="relative flex items-center justify-center gap-2">
+                  {isSaving ? (
+                    <>
+                      <svg className="animate-spin h-4 w-4" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                        <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      กำลังบันทึก...
+                    </>
+                  ) : (
+                    <>
+                      <UserPlus className="h-4 w-4" />
+                      เพิ่มพนักงาน
+                    </>
+                  )}
+                </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Mobile Edit Modal */}
+      {isMobileEditModalOpen && editingDraft && editingId && (
+        <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-slate-900/20 backdrop-blur-sm" onClick={() => setIsMobileEditModalOpen(false)}>
+          <div className="w-full sm:max-w-2xl rounded-t-3xl sm:rounded-2xl bg-white shadow-xl border-t sm:border border-slate-200 max-h-[90vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="border-b border-slate-200 px-4 py-4 flex-shrink-0">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-semibold text-slate-900">แก้ไขข้อมูลพนักงาน</h2>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsMobileEditModalOpen(false);
+                    setEditingId(null);
+                    setEditingDraft(null);
+                  }}
+                  className="rounded-lg p-1.5 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* Form Content - Scrollable */}
+            <div className="p-4 space-y-4 overflow-y-auto flex-1">
+              {isLoadingAssignments ? (
+                <div className="text-center py-8 text-sm text-slate-500">
+                  กำลังโหลดข้อมูล...
+                </div>
+              ) : (
+                <>
+                  {/* Basic Info */}
+                  <div className="space-y-3">
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        ชื่อพนักงาน *
+                      </label>
+                      <input
+                        value={editingDraft.name}
+                        onChange={(e) =>
+                          setEditingDraft((prev) =>
+                            prev ? { ...prev, name: e.target.value } : prev
+                          )
+                        }
+                        className="form-input w-full"
+                        placeholder="ชื่อพนักงาน"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          รหัสพนักงาน
+                        </label>
+                        <input
+                          value={editingDraft.employeeCode}
+                          onChange={(e) =>
+                            setEditingDraft((prev) =>
+                              prev ? { ...prev, employeeCode: e.target.value } : prev
+                            )
+                          }
+                          className="form-input w-full"
+                          placeholder="รหัส (ไม่บังคับ)"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          เบอร์โทร
+                        </label>
+                        <input
+                          value={editingDraft.phone}
+                          onChange={(e) =>
+                            setEditingDraft((prev) =>
+                              prev ? { ...prev, phone: e.target.value } : prev
+                            )
+                          }
+                          className="form-input w-full"
+                          placeholder="0812345678"
+                        />
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs font-semibold text-slate-600 mb-1">
+                        วันหยุดประจำ
+                      </label>
+                      <select
+                        value={editingDraft.regularDayOff}
+                        onChange={(e) =>
+                          setEditingDraft((prev) =>
+                            prev ? { ...prev, regularDayOff: e.target.value } : prev
+                          )
+                        }
+                        className="form-input w-full"
+                      >
+                        {DAY_OFF_OPTIONS.map((option) => (
+                          <option key={option || "none"} value={option}>
+                            {option ? option : "— ไม่ระบุ —"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          จังหวัด
+                        </label>
+                        <input
+                          list={provinceDatalistId}
+                          value={editingDraft.province}
+                          onChange={(e) =>
+                            setEditingDraft((prev) => {
+                              if (!prev) return prev;
+                              const value = e.target.value;
+                              const region = REGION_BY_PROVINCE.get(value) ?? prev.region;
+                              return { ...prev, province: value, region };
+                            })
+                          }
+                          className="form-input w-full"
+                          placeholder="เลือกจังหวัด"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">
+                          ภูมิภาค
+                        </label>
+                        <select
+                          value={editingDraft.region}
+                          onChange={(e) =>
+                            setEditingDraft((prev) =>
+                              prev ? { ...prev, region: e.target.value } : prev
+                            )
+                          }
+                          className="form-input w-full"
+                        >
+                          <option value="">— ไม่ระบุ —</option>
+                          {THAI_REGIONS.map((region) => (
+                            <option key={region} value={region}>
+                              {region}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Store Assignment */}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-600 mb-2">
+                      ร้าน/หน่วยงานที่รับผิดชอบ
+                    </label>
+                    {renderStoreSelector(editingDraft, setEditingDraft)}
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Footer - Action Buttons */}
+            <div className="border-t border-slate-200 p-4 flex-shrink-0 flex gap-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsMobileEditModalOpen(false);
+                  setEditingId(null);
+                  setEditingDraft(null);
+                }}
+                className="flex-1 rounded-lg border border-slate-200 bg-white px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => void handleUpdate()}
+                disabled={isSaving}
+                className="flex-1 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 transition-colors"
+              >
+                {isSaving ? "กำลังบันทึก..." : "บันทึก"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Detail Modal - Mobile Only */}
+      {detailEmployee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/20 backdrop-blur-sm p-4" onClick={() => setDetailEmployee(null)}>
+          <div className="w-full max-w-lg rounded-2xl bg-white shadow-xl border border-slate-200 max-h-[85vh] flex flex-col" onClick={(e) => e.stopPropagation()}>
+            {/* Header */}
+            <div className="border-b border-slate-200 px-5 py-4 flex-shrink-0">
+              <div className="flex items-start justify-between">
+                <div className="flex items-center gap-3 flex-1 min-w-0">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-indigo-600 flex-shrink-0">
+                    <User className="h-5 w-5 text-white" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <h2 className="text-lg font-semibold text-slate-900">{detailEmployee.name}</h2>
+                    {detailEmployee.employeeCode && (
+                      <p className="text-sm text-slate-500">{detailEmployee.employeeCode}</p>
+                    )}
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setDetailEmployee(null)}
+                  className="ml-3 flex-shrink-0 rounded-lg p-1.5 hover:bg-slate-100 transition-colors"
+                >
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+            </div>
+
+            {/* Content - Scrollable */}
+            <div className="p-5 space-y-5 overflow-y-auto flex-1">
+              {/* Contact Info */}
+              {detailEmployee.phone && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Phone className="h-4 w-4 text-blue-600" />
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">ติดต่อ</p>
+                  </div>
+                  <a href={`tel:${detailEmployee.phone}`} className="text-sm text-blue-600 font-medium pl-6 hover:underline">
+                    {detailEmployee.phone}
+                  </a>
+                </div>
+              )}
+
+              {/* Work Schedule */}
+              {detailEmployee.regularDayOff && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Calendar className="h-4 w-4 text-emerald-600" />
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">วันหยุดประจำ</p>
+                  </div>
+                  <p className="text-sm text-slate-700 font-medium pl-6">{detailEmployee.regularDayOff}</p>
+                </div>
+              )}
+
+              {/* Location */}
+              {(detailEmployee.province || detailEmployee.region) && (
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <MapPin className="h-4 w-4 text-slate-500" />
+                    <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">พื้นที่รับผิดชอบ</p>
+                  </div>
+                  <div className="space-y-1 pl-6">
+                    {detailEmployee.province && (
+                      <p className="text-sm text-slate-700">
+                        <span className="font-medium">จังหวัด:</span> {detailEmployee.province}
+                      </p>
+                    )}
+                    {detailEmployee.region && (
+                      <p className="text-sm text-slate-700">
+                        <span className="font-medium">ภูมิภาค:</span> {detailEmployee.region}
+                      </p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Assigned Stores */}
+              <div>
+                <div className="flex items-center gap-2 mb-3">
+                  <Building2 className="h-4 w-4 text-blue-600" />
+                  <p className="text-xs font-semibold text-slate-600 uppercase tracking-wide">
+                    ร้านค้าที่รับผิดชอบ
+                    {detailAssignments.length > 0 && (
+                      <span className="ml-2 text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                        {detailAssignments.length} ร้าน
+                      </span>
+                    )}
+                  </p>
+                </div>
+                <div className="pl-1">
+                  {detailAssignments.length > 0 ? (
+                    <div className="grid grid-cols-1 gap-2">
+                      {detailAssignments.map((assignment) => (
+                        <div
+                          key={assignment.id}
+                          className={`group flex items-center gap-3 rounded-xl px-4 py-3 transition-all duration-200 ${
+                            assignment.isPrimary
+                              ? 'bg-gradient-to-r from-blue-50 via-sky-50 to-blue-50 border-2 border-blue-300 shadow-sm hover:shadow-md hover:border-blue-400'
+                              : 'bg-slate-50 border border-slate-200 hover:bg-slate-100 hover:border-slate-300'
+                          }`}
+                        >
+                          <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${
+                            assignment.isPrimary
+                              ? 'bg-blue-500 shadow-md'
+                              : 'bg-slate-400'
+                          }`}>
+                            <Building2 className="h-4 w-4 text-white" />
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className={`text-sm font-semibold ${
+                              assignment.isPrimary ? 'text-blue-900' : 'text-slate-700'
+                            }`}>
+                              {assignment.storeName}
+                            </p>
+                            {assignment.isPrimary && (
+                              <p className="text-xs text-blue-600 mt-0.5">ร้านหลักของพนักงาน</p>
+                            )}
+                          </div>
+                          {assignment.isPrimary && (
+                            <span className="flex-shrink-0 inline-flex items-center gap-1 bg-blue-500 text-white text-xs font-bold px-2.5 py-1 rounded-full shadow-sm">
+                              ⭐ หลัก
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="text-center py-8 bg-slate-50 rounded-xl border border-slate-200">
+                      <Building2 className="h-8 w-8 text-slate-300 mx-auto mb-2" />
+                      <p className="text-sm text-slate-500">ยังไม่ได้ผูกร้านค้า</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* System Info */}
+              <div className="pt-4 border-t border-slate-100">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">ข้อมูลระบบ</p>
+                <div className="space-y-1 text-xs text-slate-500 pl-6">
+                  <p>สร้างเมื่อ: {new Date(detailEmployee.createdAt).toLocaleString("th-TH")}</p>
+                  <p>อัปเดตล่าสุด: {new Date(detailEmployee.updatedAt).toLocaleString("th-TH")}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="border-t border-slate-200 p-4 flex-shrink-0">
+              <button
+                type="button"
+                onClick={() => setDetailEmployee(null)}
+                className="w-full inline-flex items-center justify-center gap-2 rounded-lg bg-slate-100 px-4 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-200 transition-colors"
+              >
+                ปิด
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

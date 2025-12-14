@@ -1,0 +1,761 @@
+@import "tailwindcss";
+
+:root {
+  --background: #f4f8ff;
+  --foreground: #0f172a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --background: #020617;
+    --foreground: #e2e8f0;
+  }
+}
+
+/* ปิดการปัดซ้าย-ขวาทั้งหน้าเว็บ (Disable horizontal swipe/overscroll) */
+html {
+  /* Height และ overflow settings */
+  width: 100%;
+  height: 100%;
+  /* ✅ FINAL FIX: scroll ที่ html level */
+  overflow-x: hidden; /* ป้องกัน horizontal scroll */
+  overflow-y: scroll; /* ✅ Force scrollbar เพื่อให้ scroll ลื่น */
+
+  /* Text rendering และ performance */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Hide ALL scrollbars on desktop (PC) */
+@media (min-width: 768px) {
+  /* Hide scrollbar for Chrome, Safari, Edge */
+  *::-webkit-scrollbar {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+
+  /* Hide scrollbar for Firefox */
+  * {
+    scrollbar-width: none;
+  }
+
+  /* Hide scrollbar for IE and Edge legacy */
+  html,
+  body,
+  * {
+    -ms-overflow-style: none;
+  }
+}
+
+body {
+  /* ✅ FINAL FIX: body เป็น container ปกติ */
+  width: 100%;
+  min-height: 100vh;
+  margin: 0;
+  padding: 0;
+  overflow-x: hidden;
+  /* ไม่ต้องจัดการ overflow-y ให้ html จัดการ */
+  -webkit-overflow-scrolling: touch; /* ✅ iOS momentum scrolling */
+
+  /* Background และ styling */
+  background: linear-gradient(135deg, #eef5ff 0%, #e3ecff 55%, #f7fbff 100%);
+  color: var(--foreground);
+  font-family: "Inter", var(--font-geist-sans), system-ui, -apple-system, BlinkMacSystemFont,
+    "Segoe UI", sans-serif;
+  text-rendering: optimizeLegibility;
+
+  /* ปิดการปัดซ้าย-ขวา (swipe gestures) */
+  overscroll-behavior-x: none;
+  overscroll-behavior-y: auto; /* ✅ auto เพื่อให้ scroll ธรรมชาติ */
+
+  /* ✅ CRITICAL FIX: manipulation เพื่อให้ scroll ได้ทุกที่ */
+  touch-action: manipulation; /* ✅ ลบ 300ms delay และให้ scroll ได้ทุกที่ */
+}
+
+/* ✅ CRITICAL FIX: ให้ทุก element สามารถ scroll ได้ */
+* {
+  /* Allow scrolling on all elements by default */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ✅ CRITICAL FIX: Form elements ต้องอนุญาต manipulation */
+input,
+select,
+textarea,
+button,
+a {
+  touch-action: manipulation; /* ✅ Fast tap และ scroll ได้ */
+}
+
+/* Disable expensive backdrop filters on small screens to keep scrolling smooth */
+@media (max-width: 1023px) {
+  .backdrop-blur,
+  .backdrop-blur-sm,
+  .backdrop-blur-md,
+  .backdrop-blur-lg,
+  .backdrop-blur-xl,
+  .backdrop-blur-2xl,
+  .backdrop-blur-3xl {
+    -webkit-backdrop-filter: none !important;
+    backdrop-filter: none !important;
+  }
+}
+
+/* ✅ PWA fix: ลบ body::before ที่อาจรบกวน scroll */
+/* body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: linear-gradient(
+      120deg,
+      rgba(59, 130, 246, 0.08) 0%,
+      transparent 45%
+    ),
+    linear-gradient(0deg, rgba(148, 163, 184, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148, 163, 184, 0.06) 1px, transparent 1px);
+  background-size: auto, 100px 100px, 100px 100px;
+  pointer-events: none;
+  z-index: 0;
+  will-change: transform;
+  transform: translateZ(0);
+} */
+
+input,
+button,
+textarea,
+select {
+  font: inherit;
+  color: #0f172a; /* slate-900 - force dark text color */
+}
+
+/* Fix autofill text color (Chrome/Safari) */
+input:-webkit-autofill,
+select:-webkit-autofill,
+textarea:-webkit-autofill {
+  -webkit-text-fill-color: #0f172a !important; /* slate-900 */
+  -webkit-box-shadow: 0 0 0 1000px white inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+}
+
+/* Force light mode for form elements (prevent dark mode color issues) */
+input,
+select,
+textarea {
+  color-scheme: light;
+}
+
+/* html settings already defined above - this block is removed to avoid duplication */
+
+@layer components {
+  .form-input {
+    @apply w-full rounded-2xl border border-blue-100/80 bg-white/80 px-4 py-3 text-sm text-slate-800 shadow-inner shadow-slate-100/60 transition focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-4 focus:ring-blue-100;
+  }
+}
+
+/* Print styles for better compatibility */
+@media print {
+  @page {
+    size: A4;
+    margin: 10mm;
+  }
+
+  * {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    color-adjust: exact !important;
+  }
+
+  html {
+    background: white !important;
+    height: auto !important;
+  }
+
+  body {
+    background: white !important;
+    background-image: none !important;
+    color: black !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    min-height: auto !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Remove background decorations */
+  body::before,
+  body::after {
+    display: none !important;
+    content: none !important;
+  }
+
+  /* A4 page break support */
+  .print-page-break {
+    page-break-after: always;
+    break-after: page;
+  }
+
+  .print-page-break-before {
+    page-break-before: always;
+    break-before: page;
+  }
+
+  /* Avoid page breaks inside elements */
+  .print-avoid-break {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  /* Ensure tables handle page breaks properly */
+  table {
+    page-break-inside: auto;
+  }
+
+  thead {
+    display: table-header-group; /* Repeat header on each page */
+  }
+
+  tbody tr {
+    page-break-inside: avoid;
+    break-inside: avoid-page;
+  }
+
+  /* Keep related elements together */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+
+  /* Signature sections should stay together */
+  .print-signatures {
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin-top: auto; /* Push to bottom of page if space allows */
+  }
+
+  /* Ensure tables are visible */
+  table,
+  thead,
+  tbody,
+  tfoot,
+  tr,
+  th,
+  td {
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* Make sure print containers are visible */
+  #report-print-root,
+  #report-print-container {
+    display: block !important;
+    visibility: visible !important;
+    opacity: 1 !important;
+  }
+
+  /* Hide non-print elements */
+  nav,
+  header:not(.print-header),
+  footer,
+  aside,
+  .no-print,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  /* Dashboard print styles */
+  .print\:break-inside-avoid {
+    page-break-inside: avoid;
+    break-inside: avoid;
+  }
+
+  .print\:space-y-4 > :not([hidden]) ~ :not([hidden]) {
+    margin-top: 1rem;
+  }
+
+  /* Ensure charts are visible in print */
+  .recharts-wrapper {
+    page-break-inside: avoid;
+  }
+
+  /* Ensure gradients print properly */
+  .bg-gradient-to-r,
+  .bg-gradient-to-br,
+  .bg-gradient-to-l {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Force shadows for print */
+  .shadow-lg,
+  .shadow-xl,
+  .shadow-2xl {
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1) !important;
+  }
+
+  /* Ensure dark mode styles don't print */
+  .dark {
+    background: white !important;
+    color: black !important;
+  }
+
+  .dark * {
+    background: white !important;
+    color: black !important;
+    border-color: #e5e7eb !important;
+  }
+
+  /* Preserve colored elements in print */
+  .dark .bg-blue-50,
+  .dark .bg-emerald-50,
+  .dark .bg-violet-50,
+  .dark .bg-amber-50,
+  .dark .bg-pink-50,
+  .dark .bg-cyan-50 {
+    background-color: inherit !important;
+  }
+
+  /* Print-specific layouts */
+  @page {
+    size: A4 landscape;
+  }
+
+  .print-landscape {
+    width: 297mm;
+    height: 210mm;
+  }
+
+  /* Optimize chart printing */
+  .recharts-surface {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Ensure text remains readable */
+  .dark .text-slate-100,
+  .dark .text-slate-200,
+  .dark .text-slate-300,
+  .dark .text-slate-400 {
+    color: #1e293b !important;
+  }
+
+  /* Keep button colors visible in print */
+  button {
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  /* Ensure proper A4 dimensions */
+  .print-a4 {
+    width: 210mm;
+    min-height: 297mm;
+    padding: 10mm;
+    margin: 0 auto;
+    background: white;
+  }
+
+  /* Handle long tables that span multiple pages */
+  .print-table-container {
+    page-break-inside: auto;
+  }
+
+  /* Add padding to avoid cutting off content */
+  .print-content {
+    padding-bottom: 10mm;
+  }
+}
+
+/* PIN Keypad Shake Animation */
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  10%, 30%, 50%, 70%, 90% { transform: translateX(-8px); }
+  20%, 40%, 60%, 80% { transform: translateX(8px); }
+}
+
+.animate-shake {
+  animation: shake 0.5s ease-in-out;
+}
+
+/* Slide In Animation */
+@keyframes slide-in {
+  0% {
+    transform: translateY(-10px);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out;
+}
+
+/* Realtime Notification Slide In Animation */
+@keyframes slide-in-right {
+  0% {
+    transform: translateX(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-in-right {
+  animation: slide-in-right 0.3s ease-out;
+}
+
+/* Support Chat Modal Slide Up Animation */
+@keyframes slide-up {
+  0% {
+    transform: translateY(100%);
+    opacity: 0;
+  }
+  100% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+}
+
+.animate-slide-up {
+  animation: slide-up 0.3s ease-out;
+}
+
+/* Hide Scrollbar */
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
+.scrollbar-hide {
+  -ms-overflow-style: none;  /* IE and Edge */
+  scrollbar-width: none;  /* Firefox */
+}
+
+/* Leaflet Map Styles - Critical CSS for proper rendering */
+.leaflet-container {
+  background: #f8fafc;
+  height: 100%;
+  width: 100%;
+  position: relative;
+  overflow: hidden;
+  z-index: 1;
+  font-family: inherit;
+}
+
+.leaflet-pane {
+  position: absolute;
+  left: 0;
+  top: 0;
+}
+
+.leaflet-tile-pane {
+  z-index: 200;
+}
+
+.leaflet-overlay-pane {
+  z-index: 400;
+}
+
+.leaflet-shadow-pane {
+  z-index: 500;
+}
+
+.leaflet-marker-pane {
+  z-index: 600;
+}
+
+.leaflet-tooltip-pane {
+  z-index: 650;
+}
+
+.leaflet-popup-pane {
+  z-index: 700;
+}
+
+.leaflet-map-pane {
+  z-index: auto;
+}
+
+.leaflet-control {
+  position: relative;
+  z-index: 800;
+  pointer-events: visiblePainted;
+  pointer-events: auto;
+}
+
+.leaflet-top,
+.leaflet-bottom {
+  position: absolute;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.leaflet-top {
+  top: 0;
+}
+
+.leaflet-right {
+  right: 0;
+}
+
+.leaflet-bottom {
+  bottom: 0;
+}
+
+.leaflet-left {
+  left: 0;
+}
+
+.leaflet-tile {
+  position: absolute;
+  left: 0;
+  top: 0;
+  filter: inherit;
+  visibility: hidden;
+}
+
+.leaflet-tile-loaded {
+  visibility: inherit;
+}
+
+.leaflet-zoom-box {
+  width: 0;
+  height: 0;
+  box-sizing: border-box;
+  z-index: 800;
+}
+
+.leaflet-zoom-anim .leaflet-zoom-animated {
+  transition: transform 0.25s cubic-bezier(0, 0, 0.25, 1);
+}
+
+.leaflet-zoom-anim .leaflet-tile,
+.leaflet-pan-anim .leaflet-tile {
+  transition: none;
+}
+
+.leaflet-interactive {
+  cursor: pointer;
+}
+
+.leaflet-grab {
+  cursor: grab;
+}
+
+.leaflet-crosshair,
+.leaflet-crosshair .leaflet-interactive {
+  cursor: crosshair;
+}
+
+.leaflet-popup {
+  position: absolute;
+  text-align: center;
+  margin-bottom: 20px;
+}
+
+.leaflet-control-attribution {
+  background: white;
+  background: rgba(255, 255, 255, 0.8);
+  margin: 0;
+}
+
+.leaflet-control-zoom-in,
+.leaflet-control-zoom-out {
+  font: bold 18px 'Lucida Console', Monaco, monospace;
+  text-indent: 1px;
+}
+
+.leaflet-control-zoom a {
+  background-color: #fff;
+  border-bottom: 1px solid #ccc;
+  width: 26px;
+  height: 26px;
+  line-height: 26px;
+  display: block;
+  text-align: center;
+  text-decoration: none;
+  color: black;
+}
+
+.leaflet-control-zoom a:hover {
+  background-color: #f4f4f4;
+}
+
+.leaflet-control-layers {
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.4);
+  background: #fff;
+  border-radius: 5px;
+}
+
+.leaflet-dragging .leaflet-grab,
+.leaflet-dragging .leaflet-grab .leaflet-interactive,
+.leaflet-dragging .leaflet-marker-draggable {
+  cursor: move;
+  cursor: grabbing;
+}
+
+/* Custom marker styles */
+.custom-marker {
+  background: transparent;
+  border: none;
+}
+
+/* Simple Clean Marker Animation */
+@keyframes subtle-pulse {
+  0%, 100% {
+    transform: scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: scale(1.15);
+    opacity: 0.3;
+  }
+}
+
+.pulse-marker-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  cursor: pointer;
+  transition: transform 0.2s ease;
+}
+
+.pulse-marker-container:hover {
+  transform: scale(1.05);
+  z-index: 1000 !important;
+}
+
+.pulse-rings {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 40px;
+  height: 40px;
+  pointer-events: none;
+}
+
+.pulse-ring {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  animation: subtle-pulse 3s ease-in-out infinite;
+}
+
+.pulse-ring:nth-child(2) {
+  display: none; /* Hide extra rings for cleaner look */
+}
+
+.pulse-ring:nth-child(3) {
+  display: none; /* Hide extra rings for cleaner look */
+}
+
+.marker-pin {
+  position: relative;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: #3b82f6;
+  border: 3px solid white;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+  transition: all 0.2s ease;
+}
+
+.marker-pin::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: white;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+}
+
+.marker-badge {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: white;
+  border: 2px solid currentColor;
+  border-radius: 12px;
+  padding: 4px 12px;
+  white-space: nowrap;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  margin-bottom: 8px;
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.3s ease;
+  z-index: 1001;
+}
+
+.pulse-marker-container:hover .marker-badge {
+  opacity: 1;
+  transform: translateX(-50%) translateY(-4px);
+}
+
+.marker-badge-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+
+.marker-store-name {
+  font-size: 11px;
+  font-weight: 700;
+  color: #1e293b;
+  line-height: 1.2;
+}
+
+.marker-store-sales {
+  font-size: 10px;
+  font-weight: 600;
+  color: #3b82f6;
+  line-height: 1;
+}
+
+/* Marker Colors based on performance - Clean flat colors */
+.marker-pin-excellent {
+  background: #10b981;
+}
+
+.marker-pin-good {
+  background: #3b82f6;
+}
+
+.marker-pin-fair {
+  background: #f59e0b;
+}
+
+.marker-pin-poor {
+  background: #ef4444;
+}
+
+.pulse-rings-excellent { color: #10b981; }
+.pulse-rings-good { color: #3b82f6; }
+.pulse-rings-fair { color: #f59e0b; }
+.pulse-rings-poor { color: #ef4444; }
