@@ -17,14 +17,16 @@ function decodeJwtRef(token?: string) {
 
 export async function GET() {
   const url = process.env.SUPABASE_URL;
-  const keyInfo = decodeJwtRef(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const serviceKeyInfo = decodeJwtRef(process.env.SUPABASE_SERVICE_ROLE_KEY);
+  const anonKeyInfo = decodeJwtRef(process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY);
   
   try {
     const supabase = getSupabaseServiceClient();
     const { data, error, status } = await supabase.from('user_pins').select('role').limit(2);
     return NextResponse.json({
       supabaseUrl: url,
-      serviceKey: keyInfo,
+      serviceKey: serviceKeyInfo,
+      anonKey: anonKeyInfo,
       dbStatus: status,
       dbError: error,
       sampleData: data,
@@ -34,7 +36,8 @@ export async function GET() {
     return NextResponse.json({
       catchError: msg,
       supabaseUrl: url,
-      serviceKey: keyInfo,
+      serviceKey: serviceKeyInfo,
+      anonKey: anonKeyInfo,
     }, { status: 500 });
   }
 }
