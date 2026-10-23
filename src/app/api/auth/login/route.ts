@@ -64,7 +64,7 @@ export async function POST(request: Request) {
     if (queryError) {
       console.error('[login] database error:', queryError);
       return NextResponse.json<LoginResponse>(
-        { success: false, error: 'เกิดข้อผิดพลาดในการเข้าสู่ระบบ' },
+        { success: false, error: `เกิดข้อผิดพลาดในการเข้าสู่ระบบ: ${queryError.message || JSON.stringify(queryError)}` },
         { status: 500 }
       );
     }
